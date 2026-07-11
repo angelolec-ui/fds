@@ -1,3 +1,0 @@
-# FDS
-
-Dépôt initialisé.

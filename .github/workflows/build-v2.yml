@@ -41,12 +41,14 @@ jobs:
         with:
           gradle-version: '9.4.1'
 
-      - name: Verify and extract source
+      - name: Rebuild, verify and extract source
         shell: bash
         run: |
-          echo "22572f07f898ca23a2d283c9a1c16dd137007d9caaa07a6a6a982911ac13eb43  .build/QuiAppelle-v0.2-source.zip" | sha256sum --check
+          cat .build/source.part00 .build/source.part01 .build/source.part02 .build/source.part03 .build/source.part04 > /tmp/quiappelle-v02.zip.b64
+          base64 --decode /tmp/quiappelle-v02.zip.b64 > /tmp/quiappelle-v02.zip
+          echo "22572f07f898ca23a2d283c9a1c16dd137007d9caaa07a6a6a982911ac13eb43  /tmp/quiappelle-v02.zip" | sha256sum --check
           mkdir -p build-src
-          unzip -q .build/QuiAppelle-v0.2-source.zip -d build-src
+          unzip -q /tmp/quiappelle-v02.zip -d build-src
 
       - name: Build debug APK
         working-directory: build-src/QuiAppelle

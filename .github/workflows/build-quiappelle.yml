@@ -1,0 +1,79 @@
+name: Build QuiAppelle APK
+
+on:
+  push:
+    branches:
+      - quiappelle-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout temporary build branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify uploaded project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .build/part-* | base64 --decode > QuiAppelle-build-ready.zip
+          echo "d0a7cccebbe6fc9a243f981cdd530551d5c2fad9d08c09d5cd025ec3e5b34252  QuiAppelle-build-ready.zip" | sha256sum --check
+          unzip -q QuiAppelle-build-ready.zip -d source
+
+      - name: Fix Java type-name collision
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="source/QuiAppelle/app/src/main/java/fr/angelleclerc/quiappelle/CallerScreeningService.java"
+          sed -i '/import android.telecom.CallScreeningService;/d' "$FILE"
+          sed -i 's/public final class CallerScreeningService extends CallScreeningService/public final class CallerScreeningService extends android.telecom.CallScreeningService/' "$FILE"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Build debug APK
+        working-directory: source/QuiAppelle
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify and prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="source/QuiAppelle/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p output
+          cp "$APK" output/QuiAppelle-0.1.0-installable.apk
+          sha256sum output/QuiAppelle-0.1.0-installable.apk > output/QuiAppelle-0.1.0-installable.apk.sha256
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuiAppelle-APK
+          path: output/*
+          if-no-files-found: error
+          retention-days: 1

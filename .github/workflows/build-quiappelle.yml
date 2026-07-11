@@ -1,0 +1,81 @@
+name: Build QuiAppelle APK
+
+on:
+  push:
+    branches:
+      - agent/quiappelle-apk
+    paths:
+      - '.build/**'
+      - '.github/workflows/build-quiappelle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Rebuild and verify source archive
+        shell: bash
+        run: |
+          cat \
+            .build/q.part00 \
+            .build/q.part01 \
+            .build/q.part02 \
+            .build/q.part03 \
+            .build/q.part04_00 \
+            .build/q.part04_01 \
+            .build/q.part04_02 \
+            .build/q.part04_03 \
+            > /tmp/quiappelle-source.zip.b64
+          base64 --decode /tmp/quiappelle-source.zip.b64 > /tmp/quiappelle-source.zip
+          echo "62e00ba7bf0582dcf0d329ba450e0cdf777768de8557955b5b12fd24e1a2098a  /tmp/quiappelle-source.zip" | sha256sum --check
+          mkdir -p build-src
+          unzip -q /tmp/quiappelle-source.zip -d build-src
+
+      - name: Build debug APK
+        working-directory: build-src/QuiAppelle
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify and rename APK
+        shell: bash
+        run: |
+          APK="build-src/QuiAppelle/app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p output
+          cp "$APK" output/QuiAppelle-0.1.0-installable.apk
+          sha256sum output/QuiAppelle-0.1.0-installable.apk > output/QuiAppelle-0.1.0-installable.apk.sha256
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuiAppelle-APK
+          path: output/*
+          if-no-files-found: error
+          retention-days: 7
